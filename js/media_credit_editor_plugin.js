@@ -33,7 +33,7 @@
 
                         div_cls = (cls == 'aligncenter') ? 'mceTemp mceIEcenter' : 'mceTemp';
                         //return '<div class="'+div_cls+'" draggable><dl id="'+id+'" class="wp-caption '+cls+'" style="width: '+(10+parseInt(w)+)'px"><dt class="wp-caption-dt">'+c+'</dt><dd class="wp-caption-dd">'+cap+ '</dd><dd class="wp-caption-dd">'+cred +'</dd></dl></div>';
-                        return '<div id="' + id + '" class="module image ' + cls + ' ' + div_cls + '" style="width: ' + parseInt( w ) + 'px;">' + c + '<p class="wp-media-credit">' + cred + '</p><p class="wp-caption-text">' + cap + '</p></div>';
+                        return '<div id="' + id + '" class="module image ' + cls + ' ' + div_cls + '">' + c + '<p class="wp-media-credit">' + cred + '</p><p class="wp-caption-text">' + cap + '</p></div>';
                 });
             };
 
