@@ -3,7 +3,7 @@
  * Plugin Name: Navis Media Credit
  * Plugin URI: http://argoproject.org/
  * Description: Adds support for credit fields on media stored in WordPress
- * Version: 0.1
+ * Version: 0.2
  * Author: Project Argo
  * Author URI: http://argoproject.org/
  * License: GPLv2
@@ -53,10 +53,16 @@ class Navis_Media_Credit {
             array( &$this, 'add_caption_shortcode' ), 19, 8
         );
 
-        add_filter(
-            'mce_external_plugins',
-            array( &$this, 'plugins_monkeypatching' )
-        );
+        // Custom plugin only works for TinyMCE 3
+        global $tinymce_version;
+        if ( -1 === version_compare( $tinymce_version, '4018-20140303' ) ) {
+            add_filter(
+                'mce_external_plugins',
+                array( &$this, 'plugins_monkeypatching' )
+            );
+        } else {
+            add_filter( 'pre_post_content', array( $this, 'filter_pre_post_content_fix_credit' ) );
+        }
     }
 
     function admin_init() {
@@ -98,15 +104,19 @@ class Navis_Media_Credit {
     function save_media_credit( $post, $attachment ) {
         $creditor = new Media_Credit( $post['ID'] );
         $fields = array( 'media_credit', 'navis_media_credit_org', 'navis_media_can_distribute' );
+
         foreach ( $fields as $field ) {
-            if ( $_POST['attachments'] ) {
-                $input = $_POST['attachments'][$post['ID']][$field];
+            if ( $_POST['attachments'] && isset( $_POST['attachments'][$post['ID']][$field] ) ) {
+                $input = sanitize_text_field( $_POST['attachments'][$post['ID']][$field] );
             }
             else {
                 // XXX: not sure if this branch is ever followed
-                $input = $_POST[ $field ];
-                if ( ! $input ) {
-                    $input = $_POST[ "attachments[" . $post['ID'] . "][" . $field . "]" ];
+                if ( isset( $_POST[ $field ] ) ) {
+                    $input = sanitize_text_field( $_POST[ $field ] );
+                } else if ( isset( $_POST[ "attachments[" . $post['ID'] . "][" . $field . "]" ] ) ) {
+                    $input = sanitize_text_field( $_POST[ "attachments[" . $post['ID'] . "][" . $field . "]" ] );
+                } else {
+                    $input = '';
                 }
             }
             $creditor->update( $field, $input );
@@ -138,8 +148,12 @@ class Navis_Media_Credit {
             $align = 'none';
 
         $shcode = '[caption id="' . $id . '" align="align' . $align .
-            '" width="' . $width . '" caption="' . addslashes( $caption ) .
-            '" credit="' . addslashes( $creditor->to_string() ) . '"]' .  $html . '[/caption]';
+            '" width="' . $width . '" caption="' . addslashes( $caption ) . '"';
+        global $tinymce_version;
+        if ( -1 === version_compare( $tinymce_version, '4018-20140303' ) ) {
+            $shcode .= ' credit="' . addslashes( $creditor->to_string() ) . '"';
+        }
+        $shcode .= ']' .  $html . '[/caption]';
         return $shcode;
     }
 
@@ -158,15 +172,25 @@ class Navis_Media_Credit {
         $atts = apply_filters( 'navis_image_layout_defaults', $atts );
         extract( $atts );
 
-        if ( $id ) $id = 'id="' . esc_attr($id) . '" ';
+        if ( $id && ! $credit ) {
+            $post_id = str_replace( 'attachment_', '', $id );
+            $creditor = navis_get_media_credit( $post_id );
+            $credit = $creditor->to_string();
+        }
+
+        if ( $id ) {
+            $id = 'id="' . esc_attr($id) . '" ';
+        }
 
         // XXX: maybe remove module and image classes at some point
         $out = sprintf( '<div %s class="wp-caption module image %s" style="max-width: %spx;">%s', $id, $align, $width, do_shortcode( $content ) );
         if ( $credit ) {
-            $out .= sprintf( '<p class="wp-media-credit">%s</p>', $credit );
+            $out .= sprintf( '<div class="wp-media-credit">%s</div>', $credit );
         }
         if ( $caption ) {
             $out .= sprintf( '<p class="wp-caption-text">%s</p>', $caption );
+        }
+        else {$out .= sprintf( '<br />');
         }
         $out .= "</div>";
 
@@ -177,6 +201,22 @@ class Navis_Media_Credit {
     function plugins_monkeypatching( $plugins ) {
         $plugins[ 'argo_wpeditimage' ] = plugins_url( 'js/media_credit_editor_plugin.js', __FILE__ );
         return $plugins;
+    }
+
+    /**
+     * For TinyMCE 4 and greater, fix mangled [caption shortcodes]
+     */
+    function filter_pre_post_content_fix_credit( $post_content ) {
+
+        if ( empty( $post_content ) || false === strpos( $post_content, '\\" credit=\\"' ) ) {
+            return $post_content;
+        }
+
+        // [caption id="attachment_18" align="alignright" width="336" caption=" " credit="Daniel Bachhuber / The pants"]<a href="http://largo.dev/wp-content/uploads/2014/04/IMG_0502.jpg"><img class="size-medium wp-image-18" alt="IMG_0502" src="http://largo.dev/wp-content/uploads/2014/04/IMG_0502-336x252.jpg" width="336" height="252" /></a>[/caption]
+        // [caption id="attachment_18" align="alignright" width="336"]<a href="http://largo.dev/wp-content/uploads/2014/04/IMG_0502.jpg"><img class="size-medium wp-image-18" src="http://largo.dev/wp-content/uploads/2014/04/IMG_0502-336x252.jpg" alt="IMG_0502" width="336" height="252" /></a>  " credit="Daniel Bachhuber / The pants[/caption]
+        $post_content = preg_replace( '/\\"\scredit=\\\"[\w\s\/\\\]+[^"[]/', '', $post_content );
+
+        return $post_content;
     }
 
 }
